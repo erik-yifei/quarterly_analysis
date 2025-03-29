@@ -25,16 +25,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 import re
-import quiverquant
-from dotenv import load_dotenv
 import matplotlib as mpl
 from matplotlib.colors import LinearSegmentedColormap
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Get API key from environment variables
-QUIVER_API_KEY = os.getenv("API_KEY")
+import math
 
 # Set global plotting style - dark theme with custom colors
 plt.style.use('dark_background')
@@ -64,6 +57,9 @@ COLORS = {
     'positive': '#00FF00',      # Green for positive returns
     'negative': '#FF0000',      # Red for negative returns
 }
+
+# Add INPUT_DIR definition
+INPUT_DIR = r"C:\Users\ErikWang\Documents\new_poli_analysis\Politician_Quarterly_Analysis\Input"
 
 def setup_directories():
     """Ensure the Politician_Performance directory exists."""
@@ -98,29 +94,6 @@ def setup_plot_style():
         'ytick.labelsize': 12
     })
 
-def get_congress_trading_data():
-    """
-    Fetches congressional trading data from Quiver Quantitative API.
-    
-    Returns:
-        pandas.DataFrame: DataFrame containing all available congressional trading data
-    """
-    try:
-        # Initialize the Quiver client with API key
-        print(f"Initializing Quiver client with API key: {QUIVER_API_KEY[:5] if QUIVER_API_KEY else None}..." + "*" * 10)
-        quiver = quiverquant.quiver(QUIVER_API_KEY)
-        
-        # Fetch trading data
-        print("Fetching congressional trading data...")
-        congress_data = quiver.congress_trading()
-        
-        print(f"Retrieved {len(congress_data)} trading records")
-        return congress_data
-    
-    except Exception as e:
-        print(f"Error fetching data from Quiver Quantitative API: {str(e)}")
-        return None
-
 def parse_range_values(range_str):
     """
     Parse the 'Range' column to extract the upper dollar amount.
@@ -142,257 +115,136 @@ def parse_range_values(range_str):
         return 0
 
 def preprocess_data(df):
-    """
-    Preprocess the data:
-    1. Convert dates to datetime
-    2. Extract trade values from Range column
-    3. Filter for the specific quarters
-    4. Filter for Democrat and Republican only
-    5. Standardize transaction types (combine all sale types)
-    6. Filter out all Exchange transactions
-    """
+    """Preprocess the data with the same logic as party performance"""
     print("Preprocessing data...")
+    
     # Convert dates to datetime
-    df['Date'] = pd.to_datetime(df['TransactionDate'])
+    df['TransactionDate'] = pd.to_datetime(df['TransactionDate'])
     
-    # Extract trade values from Range column
-    df['TradeValueUpper'] = df['Range'].apply(parse_range_values)
+    # Clean up Transaction types
+    def clean_transaction_type(transaction):
+        transaction = str(transaction).lower()
+        if 'exchange' in transaction:
+            return 'exchange'
+        elif any(sale_type in transaction for sale_type in ['sale', 'sold']):
+            return 'sale'
+        elif any(purchase_type in transaction for purchase_type in ['purchase', 'bought']):
+            return 'purchase'
+        else:
+            return 'other'
     
-    # Define date ranges for quarters
+    # Add cleaned transaction type column
+    df['TransactionType'] = df['Transaction'].apply(clean_transaction_type)
+    
+    # Filter out exchanges and other transaction types
+    df = df[df['TransactionType'].isin(['sale', 'purchase'])]
+    
+    # Extract upper limit from Range column
+    def extract_upper_limit(range_str):
+        try:
+            # Extract the second number (upper limit) from strings like "$1,001 - $15,000"
+            upper_amount = range_str.split('-')[1].strip()
+            # Remove '$' and ',' then convert to float
+            return float(upper_amount.replace('$', '').replace(',', ''))
+        except:
+            return 0.0
+    
+    # Add trade amount column based on Range upper limit
+    df['TradeAmount'] = df['Range'].apply(extract_upper_limit)
+    
+    # Add full party name
+    df['PartyName'] = df['Party'].map({'D': 'Democrats', 'R': 'Republicans'})
+    
+    # Filter for the two quarters of interest
     q4_2024_start = pd.Timestamp('2024-10-01')
     q4_2024_end = pd.Timestamp('2024-12-31')
     q1_2025_start = pd.Timestamp('2025-01-01')
-    q1_2025_end = pd.Timestamp('2025-03-21')  # Using the date from SPY reference
+    q1_2025_end = pd.Timestamp('2025-03-21')
     
-    # Create quarter indicator
     conditions = [
-        (df['Date'] >= q4_2024_start) & (df['Date'] <= q4_2024_end),
-        (df['Date'] >= q1_2025_start) & (df['Date'] <= q1_2025_end)
+        (df['TransactionDate'] >= q4_2024_start) & (df['TransactionDate'] <= q4_2024_end),
+        (df['TransactionDate'] >= q1_2025_start) & (df['TransactionDate'] <= q1_2025_end)
     ]
     choices = ['2024-Q4', '2025-Q1']
     df['Quarter'] = np.select(conditions, choices, default='Other')
     
-    # Filter for the two quarters of interest
-    df_filtered = df[df['Quarter'].isin(['2024-Q4', '2025-Q1'])].copy()
+    # Filter for the quarters we want
+    df = df[df['Quarter'].isin(['2024-Q4', '2025-Q1'])]
     
-    if df_filtered.empty:
-        print("Warning: No data found for the specified quarters (2024-Q4 and 2025-Q1)")
-        return None
+    print("\nData Summary:")
+    print(f"Total trades (excluding exchanges): {len(df)}")
+    print(f"Date range: {df['TransactionDate'].min()} to {df['TransactionDate'].max()}")
+    print(f"\nTrades by transaction type:")
+    print(df['TransactionType'].value_counts())
+    print(f"\nTrades by party:")
+    print(df['PartyName'].value_counts())
+    print(f"\nTotal trade amount: ${df['TradeAmount'].sum():,.2f}")
     
-    # Filter for Democrats and Republicans only (exclude Independents)
-    original_count = len(df_filtered)
-    df_filtered = df_filtered[df_filtered['Party'].isin(['D', 'R'])].copy()
-    dem_rep_count = len(df_filtered)
-    print(f"Filtered to Democrats and Republicans only: {dem_rep_count} records (removed {original_count - dem_rep_count} records)")
-    
-    # Add full party name for better readability
-    df_filtered['PartyName'] = df_filtered['Party'].map({'D': 'Democrats', 'R': 'Republicans'})
-    
-    # Standardize transaction types - combine all sale types into a single "Sale" category
-    print("Standardizing transaction types...")
-    
-    # Print unique transaction types before standardization
-    unique_tx_types = df_filtered['Transaction'].unique()
-    print(f"Original transaction types: {unique_tx_types}")
-    
-    # Create standardized transaction type
-    def standardize_transaction(tx_type):
-        tx_type = str(tx_type).lower()
-        if 'purchase' in tx_type:
-            return 'Purchase'
-        elif any(sale_term in tx_type for sale_term in ['sale', 'sold']):
-            return 'Sale'
-        elif 'exchange' in tx_type:
-            return 'Exchange'
-        else:
-            return tx_type.capitalize()
-    
-    df_filtered['StandardizedTransaction'] = df_filtered['Transaction'].apply(standardize_transaction)
-    
-    # Print unique transaction types after standardization
-    unique_std_tx_types = df_filtered['StandardizedTransaction'].unique()
-    print(f"Standardized transaction types: {unique_std_tx_types}")
-    
-    # Count transactions by standardized type
-    tx_counts = df_filtered['StandardizedTransaction'].value_counts()
-    print("\nTransaction counts after standardization:")
-    for tx_type, count in tx_counts.items():
-        print(f"  {tx_type}: {count}")
-    
-    # Filter out Exchange transactions
-    before_exchange_filter = len(df_filtered)
-    df_filtered = df_filtered[df_filtered['StandardizedTransaction'] != 'Exchange'].copy()
-    after_exchange_filter = len(df_filtered)
-    exchange_removed = before_exchange_filter - after_exchange_filter
-    print(f"\nRemoved {exchange_removed} Exchange transactions (filtered from {before_exchange_filter} to {after_exchange_filter} records)")
-    
-    # Convert PriceChange and SPYChange to numeric if they're not already
-    if 'PriceChange' in df_filtered.columns:
-        df_filtered['PriceChange'] = pd.to_numeric(df_filtered['PriceChange'], errors='coerce')
-    
-    if 'SPYChange' in df_filtered.columns:
-        df_filtered['SPYChange'] = pd.to_numeric(df_filtered['SPYChange'], errors='coerce')
-    
-    print(f"Final filtered dataset: {len(df_filtered)} records (D/R parties, Purchase/Sale only, Q4 2024 and Q1 2025)")
-    return df_filtered
+    return df
 
 def calculate_politician_performance(df):
-    """
-    Calculate performance metrics by politician, accounting for trade direction.
+    """Calculate performance metrics by politician using PercentChange"""
+    print("\nCalculating politician performance metrics...")
     
-    Steps:
-    1. Adjust price change based on transaction type (Purchase vs Sale)
-    2. Calculate weighted returns for each politician in each quarter
-    3. Compare to SPY performance
-    """
-    print("Calculating politician performance metrics...")
+    # First, calculate politician totals by quarter
+    politician_totals = df.groupby(['Quarter', 'Representative'])['TradeAmount'].sum().reset_index()
     
-    # STEP 1: Create adjusted price change accounting for transaction type
-    # For purchases: positive price change = profit
-    # For sales: negative price change = profit (reversed sign)
-    df['AdjustedPriceChange'] = df.apply(
-        lambda row: row['PriceChange'] if row['StandardizedTransaction'] == 'Purchase' else -row['PriceChange'], 
-        axis=1
-    )
+    # Create a dictionary for quick lookup of politician totals
+    total_lookup = {(row['Quarter'], row['Representative']): row['TradeAmount'] 
+                   for _, row in politician_totals.iterrows()}
     
-    # Make sure the sign reversal for sales was applied correctly
-    sale_count = len(df[df['StandardizedTransaction'] == 'Sale'])
-    purchase_count = len(df[df['StandardizedTransaction'] == 'Purchase'])
-    print(f"Adjusted price change sign for {sale_count} sale transactions")
-    print(f"Dataset contains {purchase_count} purchases and {sale_count} sales")
+    # Calculate weighted return for each trade relative to politician's total trades
+    df['WeightedTradeReturn'] = df.apply(lambda row: 
+        (row['PercentChange'] * row['TradeAmount']) /  # Use PercentChange directly
+        total_lookup[(row['Quarter'], row['Representative'])], axis=1)
     
-    # Function to calculate weighted average return for a politician's trades
-    def weighted_average(group):
-        # Extract trade values (weights) and adjusted returns (values)
-        weights = group['TradeValueUpper']  # Dollar amount of each trade
-        values = group['AdjustedPriceChange']  # Direction-adjusted price change percentage
+    # Print some validation for the weighted returns
+    print("\nValidating weighted returns calculation:")
+    for (quarter, rep), group in df.groupby(['Quarter', 'Representative']):
+        total_weight = group['TradeAmount'].sum()
+        weighted_sum = (group['PercentChange'] * group['TradeAmount']).sum()  # Use PercentChange
+        calculated_return = weighted_sum / total_weight
+        summed_weighted_returns = group['WeightedTradeReturn'].sum()
         
-        # Filter out NaN values from both arrays
-        mask = ~values.isna()
-        weights, values = weights[mask], values[mask]
-        
-        # If no valid data, return NaN
-        if len(weights) == 0 or weights.sum() == 0:
-            return np.nan
-        
-        # Calculate weighted sum directly for more control
-        weighted_sum = np.sum(weights * values)
-        total_weight = np.sum(weights)
-        
-        # Calculate weighted average and return full precision
-        return weighted_sum / total_weight
+        # Print validation for a few examples
+        if np.random.random() < 0.1:  # Print ~10% of politicians for validation
+            print(f"\nPolitician: {rep} ({quarter})")
+            print(f"Total trade amount: ${total_weight:,.2f}")
+            print(f"Direct calculation: {calculated_return:.2f}%")
+            print(f"Sum of weighted returns: {summed_weighted_returns:.2f}%")
+            print(f"Number of trades: {len(group)}")
+            print("Sample of trades:")
+            for _, trade in group.head(3).iterrows():
+                print(f"  Trade amount: ${trade['TradeAmount']:,.2f}, "
+                      f"Type: {trade['TransactionType']}, "
+                      f"Return: {trade['PercentChange']:.2f}%, "
+                      f"Weight: {(trade['TradeAmount']/total_weight*100):.1f}%, "
+                      f"Weighted contribution: {trade['WeightedTradeReturn']:.2f}%")
     
-    # Enable validation for random politicians to verify calculation correctness
-    VALIDATION_SAMPLE_SIZE = 5  # Number of politicians to validate
-    np.random.seed(42)  # For reproducibility
+    # Group by Quarter and Politician
+    politician_performance = df.groupby(['Quarter', 'Representative', 'PartyName']).agg({
+        'TradeAmount': 'sum',  # Sum of trade amounts
+        'WeightedTradeReturn': 'sum',  # Sum of weighted returns (should equal weighted average)
+        'TransactionType': lambda x: len([t for t in x if t == 'purchase']),  # Count purchases
+        'Ticker': 'nunique'
+    }).reset_index()
     
-    # Calculate metrics for each politician in each quarter
-    all_politician_results = []
-    for (quarter, rep, party), group in df.groupby(['Quarter', 'Representative', 'PartyName']):
-        # Calculate the core metrics
-        portfolio_value = group['TradeValueUpper'].sum()
-        purchase_count = len(group[group['StandardizedTransaction'] == 'Purchase'])
-        sale_count = len(group[group['StandardizedTransaction'] == 'Sale'])
-        trade_count = len(group)
-        unique_stocks = group['Ticker'].nunique()
-        
-        # Calculate weighted return with full precision
-        raw_return = weighted_average(group)
-        
-        # For validation, manually check the calculation for a sample of politicians
-        should_validate = np.random.random() < (VALIDATION_SAMPLE_SIZE / len(df.groupby(['Quarter', 'Representative'])))
-        
-        if should_validate or 'Mullin' in rep:
-            print(f"\nValidating calculation for {rep} in {quarter}:")
-            weights = group['TradeValueUpper'].values
-            values = group['AdjustedPriceChange'].values
-            valid_mask = ~np.isnan(values)
-            valid_weights = weights[valid_mask]
-            valid_values = values[valid_mask]
-            
-            if len(valid_weights) > 0:
-                # Calculate manually to validate
-                manual_weighted_sum = np.sum(valid_weights * valid_values)
-                manual_total_weight = np.sum(valid_weights)
-                manual_result = manual_weighted_sum / manual_total_weight
-                
-                # Compare with numpy's implementation
-                numpy_result = np.average(valid_values, weights=valid_weights)
-                
-                # Print detailed calculation steps
-                print(f"  Portfolio value: ${portfolio_value:,.2f}")
-                print(f"  Trades: {trade_count} ({purchase_count} purchases, {sale_count} sales)")
-                
-                # Show the full calculation for a few trades as an example
-                sample_size = min(3, len(valid_weights))
-                print(f"  Sample calculation for {sample_size} trades:")
-                for i in range(sample_size):
-                    print(f"    Trade {i+1}: ${valid_weights[i]:,.2f} × {valid_values[i]:.6f}% = ${valid_weights[i] * valid_values[i] / 100:,.2f}")
-                
-                print(f"  Manual weighted sum: {manual_weighted_sum:.6f}")
-                print(f"  Manual total weight: {manual_total_weight:.2f}")
-                print(f"  Manual result: {manual_result:.6f}%")
-                print(f"  NumPy result: {numpy_result:.6f}%")
-                print(f"  Difference: {abs(manual_result - numpy_result):.10f}% (should be near zero)")
-            else:
-                print("  No valid trades with price data")
-        
-        # Store the result in our list
-        all_politician_results.append({
-            'Quarter': quarter,
-            'Representative': rep,
-            'PartyName': party,
-            'PortfolioValue': portfolio_value,
-            'WeightedReturn': raw_return,  # Full precision
-            'PurchaseCount': purchase_count,
-            'SaleCount': sale_count,
-            'TradeCount': trade_count,
-            'UniqueStocks': unique_stocks
-        })
+    # Rename columns for clarity
+    politician_performance.columns = ['Quarter', 'Representative', 'PartyName', 
+                                   'PortfolioValue', 'WeightedReturn', 
+                                   'PurchaseCount', 'UniqueStocks']
     
-    # Convert to DataFrame
-    politician_performance = pd.DataFrame(all_politician_results)
-    
-    # Add formatted version with consistent decimal places for display
-    politician_performance['WeightedReturnFormatted'] = politician_performance['WeightedReturn'].apply(
-        lambda x: f"{x:.1f}" if not pd.isna(x) else "N/A"
-    )
-    
-    # Add SPY reference performance for comparison
+    # Add SPY comparison
     politician_performance['SPYReturn'] = politician_performance['Quarter'].map(SPY_CHANGES)
-    
-    # Calculate excess return (how much the politician beat or trailed the market)
     politician_performance['ExcessReturn'] = politician_performance['WeightedReturn'] - politician_performance['SPYReturn']
     
-    # Print summary statistics to verify overall calculation
-    print("\nSummary statistics for weighted returns:")
-    print(f"  Mean: {politician_performance['WeightedReturn'].mean():.4f}%")
-    print(f"  Median: {politician_performance['WeightedReturn'].median():.4f}%")
-    print(f"  Min: {politician_performance['WeightedReturn'].min():.4f}%")
-    print(f"  Max: {politician_performance['WeightedReturn'].max():.4f}%")
-    
-    # Print verification of key politicians across different return ranges
-    ranges = [
-        (-float('inf'), -20),
-        (-20, -10),
-        (-10, 0),
-        (0, 10),
-        (10, 20),
-        (20, float('inf'))
-    ]
-    
-    print("\nVerification of politicians in different return ranges:")
-    for low, high in ranges:
-        filtered = politician_performance[
-            (politician_performance['WeightedReturn'] >= low) & 
-            (politician_performance['WeightedReturn'] < high)
-        ]
-        if len(filtered) > 0:
-            print(f"\n  Range {low}% to {high}%: {len(filtered)} politicians")
-            # Show a few examples from each range
-            sample = filtered.sample(min(3, len(filtered)))
-            for _, row in sample.iterrows():
-                print(f"    {row['Representative']} ({row['PartyName']}): {row['WeightedReturn']:.4f}% (raw) → {row['WeightedReturnFormatted']}% (formatted)")
+    # Print summary statistics
+    print("\nSummary of politician returns:")
+    print(f"Number of politicians: {len(politician_performance)}")
+    print(f"Average return: {politician_performance['WeightedReturn'].mean():.2f}%")
+    print(f"Median return: {politician_performance['WeightedReturn'].median():.2f}%")
+    print(f"Min return: {politician_performance['WeightedReturn'].min():.2f}%")
+    print(f"Max return: {politician_performance['WeightedReturn'].max():.2f}%")
     
     return politician_performance
 
@@ -485,30 +337,60 @@ def plot_politician_performance(performance_data, output_dir, quarter, top_n=Non
     plt.yticks(positions, top_performers['Representative'])
     plt.ylabel('Politician', fontsize=14)
     
-    # Add value labels on the right side of bars
+    # Calculate padding based on the range of returns
+    max_return = top_performers['WeightedReturn'].max()
+    min_return = top_performers['WeightedReturn'].min()
+    
+    # Add more padding to both sides to ensure all labels are visible
+    left_padding = 15  # Increased padding for negative side
+    right_padding = 25  # Keep existing padding for positive side
+    
+    # Calculate x-axis limits
+    x_min = min(min_return - left_padding, spy_return - 10, -5)
+    x_max = max(max_return + right_padding, spy_return + 10)
+    
+    # Update x-axis limits
+    plt.xlim(left=x_min, right=x_max)
+    
+    # Add gridlines at regular intervals
+    grid_step = 10  # Grid lines every 10%
+    grid_ticks = np.arange(
+        math.floor(x_min / grid_step) * grid_step,
+        math.ceil(x_max / grid_step) * grid_step + grid_step,
+        grid_step
+    )
+    plt.xticks(grid_ticks)
+    
+    # Make the grid more visible
+    plt.grid(axis='x', linestyle='--', alpha=0.7, which='major')
+    
+    # Update label positioning logic to handle large negative values better
     for i, (value, party, formatted_value) in enumerate(zip(
         top_performers['WeightedReturn'], 
         top_performers['PartyName'],
-        top_performers['WeightedReturnFormatted']
+        top_performers['WeightedReturn'].apply(lambda x: f"{x:.1f}%")
     )):
-        color = COLORS['text']  # Default text color
+        color = COLORS['text']
         
-        # Place labels on the right side of the graph instead of at bar end
-        # This ensures all labels are visible regardless of bar length
+        # Place labels with more spacing from the bar end
         bar_end_x = value
-        label_x = max(bar_end_x + 1, 2)  # Ensure label is at least at x=2 position
+        if value < 0:
+            # For negative values, place label to the left of the bar
+            label_x = min(bar_end_x - 1, -2)
+            ha = 'right'  # Align text to the right
+        else:
+            # For positive values, place label to the right of the bar
+            label_x = max(bar_end_x + 1, 2)
+            ha = 'left'  # Align text to the left
         
-        # Use the formatted value with consistent decimal places
-        plt.text(label_x, i, f"{formatted_value}%", va='center', color=color)
-        
-        # Add party indicator next to politician name
-        party_initial = 'D' if party == 'Democrats' else 'R'
-        plt.text(-5, i, f"({party_initial})", va='center', ha='right', color=color, fontsize=10)
+        plt.text(label_x, i, formatted_value, va='center', ha=ha, color=color)
     
-    # Add portfolio value annotation
-    for i, (value, trades) in enumerate(zip(top_performers['PortfolioValue'], top_performers['TradeCount'])):
-        plt.text(top_performers['WeightedReturn'].max() + 5, i, 
-                 f"${value:,.0f} ({trades} trades)", va='center', color=COLORS['text'], fontsize=10)
+    # Move portfolio value annotations further right if needed
+    portfolio_x = max(x_max - 20, top_performers['WeightedReturn'].max() + 5)
+    for i, (value, trades) in enumerate(zip(top_performers['PortfolioValue'], top_performers['PurchaseCount'])):
+        plt.text(portfolio_x, i, 
+                f"${value:,.0f} ({trades} trades)", 
+                va='center', color=COLORS['text'], fontsize=10)
     
     # Add extra space below the bottom-most bar for the SPY label
     plt.ylim(-2, len(top_performers))
@@ -516,14 +398,6 @@ def plot_politician_performance(performance_data, output_dir, quarter, top_n=Non
     # Add a source watermark (moved to bottom margin)
     plt.figtext(0.5, 0.005, 'Data source: Quiver Quantitative', 
                 fontsize=8, ha='center', color=COLORS['text'])
-    
-    # Add grid lines for readability
-    plt.grid(axis='x', linestyle='--', alpha=0.7)
-    
-    # Adjust x-axis limits to include all labels
-    right_margin = 25  # Add extra margin to fit all labels
-    plt.xlim(left=min(-5, spy_return - 10), 
-             right=max(top_performers['WeightedReturn'].max() + right_margin, spy_return + 10))
     
     # Save the figure with adjusted layout to make room for subtitle
     plt.tight_layout(rect=[0, 0.05, 1, 0.97])
@@ -535,33 +409,29 @@ def plot_politician_performance(performance_data, output_dir, quarter, top_n=Non
 
 def save_raw_data(df, output_dir):
     """Save the filtered data to CSV for reference."""
-    # Add a more descriptive column name for clarity
-    df = df.copy()
-    df.rename(columns={'TradeValueUpper': 'TradeAmount_UpperRange_$'}, inplace=True)
+    print("\nSaving cleaned data to CSV files...")
     
-    # Rearrange columns to put important ones first
-    columns_order = [
-        'Quarter', 'Representative', 'PartyName', 'Party',  
-        'Ticker', 'Transaction', 'StandardizedTransaction',
-        'TradeAmount_UpperRange_$', 'Range', 'Date', 'TransactionDate',
-        'PriceChange', 'AdjustedPriceChange', 'SPYChange'
-    ]
+    # Save main dataset with weighted trade returns
+    main_output = os.path.join(output_dir, 'cleaned_trading_data.csv')
+    df.to_csv(main_output, index=False)
+    print(f"Saved all trades to: {main_output}")
     
-    # Only include columns that exist in the dataframe
-    existing_columns = [col for col in columns_order if col in df.columns]
+    # Create and save summary by politician
+    pivot_by_politician = pd.pivot_table(
+        df,
+        values=['TradeAmount', 'WeightedTradeReturn'],
+        index=['Quarter', 'PartyName', 'Representative'],
+        aggfunc={
+            'TradeAmount': 'sum',
+            'WeightedTradeReturn': 'sum'  # Sum the pre-calculated weighted returns
+        }
+    ).round(2).reset_index()
     
-    # Add any remaining columns at the end
-    remaining_columns = [col for col in df.columns if col not in existing_columns]
+    politician_output = os.path.join(output_dir, 'summary_by_politician.csv')
+    pivot_by_politician.to_csv(politician_output, index=False)
+    print(f"Saved politician summary to: {politician_output}")
     
-    # Set the final column order
-    final_columns = existing_columns + remaining_columns
-    
-    # Save to CSV with the specified column order
-    output_path = os.path.join(output_dir, 'politician_performance_raw_data.csv')
-    df[final_columns].to_csv(output_path, index=False)
-    print(f"Saved filtered raw data to: {output_path}")
-    
-    return output_path
+    return main_output
 
 def main():
     """Main function to analyze individual politician performance and create visualizations."""
@@ -574,25 +444,21 @@ def main():
     output_dir = setup_directories()
     
     try:
-        # Check if API key is set
-        if not QUIVER_API_KEY:
-            print("Error: API key not set. Please create a .env file with your API_KEY=your_api_key_here")
-            print("You can sign up for a Quiver Quantitative API key at https://www.quiverquant.com/")
-            return
-        
-        # Get trading data
-        trading_data = get_congress_trading_data()
+        # Load data from final_results.csv
+        file_path = os.path.join(INPUT_DIR, 'final_results.csv')
+        print(f"Loading data from: {file_path}")
+        trading_data = pd.read_csv(file_path)
         
         if trading_data is not None:
             # Preprocess data
             df_processed = preprocess_data(trading_data)
             
             if df_processed is not None and not df_processed.empty:
-                # Save raw filtered data
-                save_raw_data(df_processed, output_dir)
-                
-                # Calculate politician performance metrics
+                # Calculate politician performance metrics first
                 politician_performance = calculate_politician_performance(df_processed)
+                
+                # Then save raw filtered data with the weighted returns
+                save_raw_data(df_processed, output_dir)
                 
                 # Save performance data
                 performance_csv_path = os.path.join(output_dir, 'politician_performance_data.csv')
@@ -607,7 +473,7 @@ def main():
             else:
                 print("Error: No valid data available for analysis after filtering.")
         else:
-            print("Failed to fetch trading data. Please check your API key and try again.")
+            print("Error: Could not load data from final_results.csv")
         
     except Exception as e:
         print(f"Error during Politician Performance analysis: {str(e)}")

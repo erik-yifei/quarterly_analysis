@@ -19,16 +19,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 import re
-import quiverquant
-from dotenv import load_dotenv
-import matplotlib as mpl
+import math
 from matplotlib.colors import LinearSegmentedColormap
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Get API key from environment variables
-QUIVER_API_KEY = os.getenv("API_KEY")
+# Add INPUT_DIR definition
+INPUT_DIR = r"C:\Users\ErikWang\Documents\new_poli_analysis\Politician_Quarterly_Analysis\Input"
 
 # Set global plotting style - dark theme with custom colors
 plt.style.use('dark_background')
@@ -96,29 +91,6 @@ def setup_plot_style():
         'ytick.labelsize': 12
     })
 
-def get_congress_trading_data():
-    """
-    Fetches congressional trading data from Quiver Quantitative API.
-    
-    Returns:
-        pandas.DataFrame: DataFrame containing all available congressional trading data
-    """
-    try:
-        # Initialize the Quiver client with API key
-        print(f"Initializing Quiver client with API key: {QUIVER_API_KEY[:5] if QUIVER_API_KEY else None}..." + "*" * 10)
-        client = quiverquant.quiver(QUIVER_API_KEY)
-        
-        # Get congressional trading data (single method, not separate house/senate)
-        print("Fetching Congressional trading data...")
-        congress_data = client.congress_trading()
-        
-        print(f"Retrieved {len(congress_data)} trading records")
-        return congress_data
-        
-    except Exception as e:
-        print(f"Error fetching congressional trading data: {str(e)}")
-        return None
-
 def parse_range_values(range_str):
     """
     Parse the 'Range' column to extract the upper dollar amount.
@@ -136,132 +108,100 @@ def parse_range_values(range_str):
     return float(numbers[1].replace(',', ''))
 
 def preprocess_data(df):
-    """
-    Preprocess the data:
-    1. Convert dates to datetime
-    2. Extract trade values from Range column
-    3. Filter for the specific quarters
-    4. Filter for Democrat and Republican only
-    5. Standardize transaction types (combine all sale types)
-    6. Filter out all Exchange transactions
-    """
+    """Preprocess the data with the same logic as party performance"""
     print("Preprocessing data...")
+    
     # Convert dates to datetime
-    df['Date'] = pd.to_datetime(df['TransactionDate'])
+    df['TransactionDate'] = pd.to_datetime(df['TransactionDate'])
     
-    # Extract trade values from Range column
-    df['TradeValueUpper'] = df['Range'].apply(parse_range_values)
+    # Clean up Transaction types
+    def clean_transaction_type(transaction):
+        transaction = str(transaction).lower()
+        if 'exchange' in transaction:
+            return 'exchange'
+        elif any(sale_type in transaction for sale_type in ['sale', 'sold']):
+            return 'sale'
+        elif any(purchase_type in transaction for purchase_type in ['purchase', 'bought']):
+            return 'purchase'
+        else:
+            return 'other'
     
-    # Define date ranges for quarters
+    # Add cleaned transaction type column
+    df['TransactionType'] = df['Transaction'].apply(clean_transaction_type)
+    
+    # Filter out exchanges and other transaction types
+    df = df[df['TransactionType'].isin(['sale', 'purchase'])]
+    
+    # Extract upper limit from Range column
+    def extract_upper_limit(range_str):
+        try:
+            # Extract the second number (upper limit) from strings like "$1,001 - $15,000"
+            upper_amount = range_str.split('-')[1].strip()
+            # Remove '$' and ',' then convert to float
+            return float(upper_amount.replace('$', '').replace(',', ''))
+        except:
+            return 0.0
+    
+    # Add trade amount column based on Range upper limit
+    df['TradeAmount'] = df['Range'].apply(extract_upper_limit)
+    
+    # Add full party name
+    df['PartyName'] = df['Party'].map({'D': 'Democrats', 'R': 'Republicans'})
+    
+    # Filter for the two quarters of interest
     q4_2024_start = pd.Timestamp('2024-10-01')
     q4_2024_end = pd.Timestamp('2024-12-31')
     q1_2025_start = pd.Timestamp('2025-01-01')
-    q1_2025_end = pd.Timestamp('2025-03-21')  # Using the date from SPY reference
+    q1_2025_end = pd.Timestamp('2025-03-21')
     
-    # Create quarter indicator
     conditions = [
-        (df['Date'] >= q4_2024_start) & (df['Date'] <= q4_2024_end),
-        (df['Date'] >= q1_2025_start) & (df['Date'] <= q1_2025_end)
+        (df['TransactionDate'] >= q4_2024_start) & (df['TransactionDate'] <= q4_2024_end),
+        (df['TransactionDate'] >= q1_2025_start) & (df['TransactionDate'] <= q1_2025_end)
     ]
     choices = ['2024-Q4', '2025-Q1']
     df['Quarter'] = np.select(conditions, choices, default='Other')
     
-    # Filter for the two quarters of interest
-    df_filtered = df[df['Quarter'].isin(['2024-Q4', '2025-Q1'])].copy()
+    # Filter for the quarters we want
+    df = df[df['Quarter'].isin(['2024-Q4', '2025-Q1'])]
     
-    if df_filtered.empty:
-        print("Warning: No data found for the specified quarters (2024-Q4 and 2025-Q1)")
-        return None
+    print("\nData Summary:")
+    print(f"Total trades (excluding exchanges): {len(df)}")
+    print(f"Date range: {df['TransactionDate'].min()} to {df['TransactionDate'].max()}")
+    print(f"\nTrades by transaction type:")
+    print(df['TransactionType'].value_counts())
+    print(f"\nTrades by party:")
+    print(df['PartyName'].value_counts())
+    print(f"\nTotal trade amount: ${df['TradeAmount'].sum():,.2f}")
     
-    # Filter for Democrats and Republicans only (exclude Independents)
-    original_count = len(df_filtered)
-    df_filtered = df_filtered[df_filtered['Party'].isin(['D', 'R'])].copy()
-    dem_rep_count = len(df_filtered)
-    print(f"Filtered to Democrats and Republicans only: {dem_rep_count} records (removed {original_count - dem_rep_count} records)")
-    
-    # Add full party name for better readability
-    df_filtered['PartyName'] = df_filtered['Party'].map({'D': 'Democrats', 'R': 'Republicans'})
-    
-    # Standardize transaction types - combine all sale types into a single "Sale" category
-    print("Standardizing transaction types...")
-    
-    # Print unique transaction types before standardization
-    unique_tx_types = df_filtered['Transaction'].unique()
-    print(f"Original transaction types: {unique_tx_types}")
-    
-    # Create standardized transaction type
-    def standardize_transaction(tx_type):
-        tx_type = str(tx_type).lower()
-        if 'purchase' in tx_type:
-            return 'Purchase'
-        elif any(sale_term in tx_type for sale_term in ['sale', 'sold']):
-            return 'Sale'
-        elif 'exchange' in tx_type:
-            return 'Exchange'
-        else:
-            return tx_type.capitalize()
-    
-    df_filtered['StandardizedTransaction'] = df_filtered['Transaction'].apply(standardize_transaction)
-    
-    # Print unique transaction types after standardization
-    unique_std_tx_types = df_filtered['StandardizedTransaction'].unique()
-    print(f"Standardized transaction types: {unique_std_tx_types}")
-    
-    # Count transactions by standardized type
-    tx_counts = df_filtered['StandardizedTransaction'].value_counts()
-    print("\nTransaction counts after standardization:")
-    for tx_type, count in tx_counts.items():
-        print(f"  {tx_type}: {count}")
-    
-    # Filter out Exchange transactions
-    before_exchange_filter = len(df_filtered)
-    df_filtered = df_filtered[df_filtered['StandardizedTransaction'] != 'Exchange'].copy()
-    after_exchange_filter = len(df_filtered)
-    exchange_removed = before_exchange_filter - after_exchange_filter
-    print(f"\nRemoved {exchange_removed} Exchange transactions (filtered from {before_exchange_filter} to {after_exchange_filter} records)")
-    
-    # Convert PriceChange and SPYChange to numeric if they're not already
-    if 'PriceChange' in df_filtered.columns:
-        df_filtered['PriceChange'] = pd.to_numeric(df_filtered['PriceChange'], errors='coerce')
-    
-    if 'SPYChange' in df_filtered.columns:
-        df_filtered['SPYChange'] = pd.to_numeric(df_filtered['SPYChange'], errors='coerce')
-    
-    print(f"Final filtered dataset: {len(df_filtered)} records (D/R parties, Purchase/Sale only, Q4 2024 and Q1 2025)")
-    return df_filtered
+    return df
 
 def analyze_stock_holdings(df):
-    """
-    Analyze stock holdings by party and transaction type.
-    Creates summaries of what stocks each party is buying vs. selling.
-    """
+    """Analyze stock holdings by party and transaction type."""
     print("Analyzing stock holdings by party and transaction type...")
     
     # Group by Quarter, Party, Transaction Type, and Ticker
-    # Sum the TradeValueUpper to get total value for each stock
-    stock_holdings = df.groupby(['Quarter', 'PartyName', 'StandardizedTransaction', 'Ticker']).agg({
-        'TradeValueUpper': 'sum',
+    stock_holdings = df.groupby(['Quarter', 'PartyName', 'TransactionType', 'Ticker']).agg({
+        'TradeAmount': 'sum',  # Use TradeAmount instead of TradeValueUpper
         'Representative': 'nunique',
         'Transaction': 'count'
     }).reset_index()
     
     # Rename columns for clarity
     stock_holdings = stock_holdings.rename(columns={
-        'TradeValueUpper': 'TotalValue',
+        'TradeAmount': 'TotalValue',
         'Representative': 'UniquePoliticians',
         'Transaction': 'TransactionCount'
     })
     
     # Calculate the total by Quarter, Party, and Transaction Type
-    # This will be used to calculate percentage of each stock
-    totals = stock_holdings.groupby(['Quarter', 'PartyName', 'StandardizedTransaction'])['TotalValue'].sum().reset_index()
+    totals = stock_holdings.groupby(['Quarter', 'PartyName', 'TransactionType'])['TotalValue'].sum().reset_index()
     totals = totals.rename(columns={'TotalValue': 'CategoryTotal'})
     
     # Merge the totals back to get percentages
     stock_holdings = pd.merge(
         stock_holdings, 
         totals, 
-        on=['Quarter', 'PartyName', 'StandardizedTransaction']
+        on=['Quarter', 'PartyName', 'TransactionType']
     )
     
     # Calculate percentage of total
@@ -269,7 +209,7 @@ def analyze_stock_holdings(df):
     
     # Sort by value within each group
     stock_holdings = stock_holdings.sort_values(
-        ['Quarter', 'PartyName', 'StandardizedTransaction', 'TotalValue'], 
+        ['Quarter', 'PartyName', 'TransactionType', 'TotalValue'], 
         ascending=[True, True, True, False]
     )
     
@@ -279,11 +219,11 @@ def analyze_stock_holdings(df):
         print(f"\n{quarter}:")
         for party in stock_holdings['PartyName'].unique():
             print(f"  {party}:")
-            for tx_type in stock_holdings['StandardizedTransaction'].unique():
+            for tx_type in stock_holdings['TransactionType'].unique():
                 subset = stock_holdings[
                     (stock_holdings['Quarter'] == quarter) & 
                     (stock_holdings['PartyName'] == party) & 
-                    (stock_holdings['StandardizedTransaction'] == tx_type)
+                    (stock_holdings['TransactionType'] == tx_type)
                 ]
                 if len(subset) > 0:
                     total = subset['CategoryTotal'].iloc[0]
@@ -291,37 +231,29 @@ def analyze_stock_holdings(df):
                     for _, row in subset.head(5).iterrows():
                         print(f"      {row['Ticker']}: ${row['TotalValue']:,.2f} ({row['Percentage']:.1f}% of total)")
     
-    # Save to CSV for reference
-    output_path = os.path.join(os.path.dirname(__file__), 'stock_holdings_by_party.csv')
-    stock_holdings.to_csv(output_path, index=False)
-    print(f"Saved stock holdings data to: {output_path}")
-    
     return stock_holdings
 
 def plot_stock_pie_charts(stock_data, output_dir):
-    """
-    Create pie charts showing stock distribution for each party and transaction type.
-    
-    Parameters:
-        stock_data: DataFrame with stock holdings analysis
-        output_dir: Directory to save the visualizations
-    """
+    """Create side-by-side pie charts showing stock distribution for purchases and sales."""
     print("Creating stock holdings pie charts...")
     
-    # Get unique quarters, parties, and transaction types
+    # Get unique quarters and parties
     quarters = stock_data['Quarter'].unique()
     parties = stock_data['PartyName'].unique()
-    tx_types = stock_data['StandardizedTransaction'].unique()
     
-    # For each combination, create a pie chart
+    # For each quarter and party combination, create side-by-side pie charts
     for quarter in quarters:
         for party in parties:
-            for tx_type in tx_types:
+            # Create a figure with two subplots side by side
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 9))
+            
+            # Process each transaction type (purchase and sale)
+            for tx_type, ax in zip(['purchase', 'sale'], [ax1, ax2]):
                 # Filter data for this combination
                 subset = stock_data[
                     (stock_data['Quarter'] == quarter) & 
                     (stock_data['PartyName'] == party) & 
-                    (stock_data['StandardizedTransaction'] == tx_type)
+                    (stock_data['TransactionType'] == tx_type)
                 ]
                 
                 if len(subset) == 0:
@@ -338,7 +270,7 @@ def plot_stock_pie_charts(stock_data, output_dir):
                     other_row = pd.DataFrame({
                         'Quarter': [quarter],
                         'PartyName': [party],
-                        'StandardizedTransaction': [tx_type],
+                        'TransactionType': [tx_type],
                         'Ticker': ['Other'],
                         'TotalValue': [other_sum],
                         'UniquePoliticians': [others['UniquePoliticians'].sum()],
@@ -350,14 +282,11 @@ def plot_stock_pie_charts(stock_data, output_dir):
                 else:
                     plot_data = top_10
                 
-                # Create the pie chart
-                plt.figure(figsize=(12, 9))
-                
                 # Use a nice color palette
                 colors = COLORS['pie_palette'][:len(plot_data)]
                 
                 # Create pie chart
-                wedges, texts, autotexts = plt.pie(
+                wedges, texts, autotexts = ax.pie(
                     plot_data['TotalValue'],
                     labels=None,  # No labels on the pie itself
                     autopct='%1.1f%%',
@@ -375,9 +304,9 @@ def plot_stock_pie_charts(stock_data, output_dir):
                 
                 # Add a title with total amount
                 total_amount = subset['CategoryTotal'].iloc[0]
-                plt.title(
-                    f"{party} {tx_type}s by Stock - {quarter}\nTotal: ${total_amount:,.0f}",
-                    fontsize=18, 
+                ax.set_title(
+                    f"{tx_type.capitalize()}s\nTotal: ${total_amount:,.0f}",
+                    fontsize=16, 
                     pad=20,
                     color=COLORS['text']
                 )
@@ -387,87 +316,116 @@ def plot_stock_pie_charts(stock_data, output_dir):
                     f"{row['Ticker']} (${row['TotalValue']:,.0f})"
                     for _, row in plot_data.iterrows()
                 ]
-                plt.legend(
+                ax.legend(
                     wedges, 
                     ticker_labels,
                     title="Stock (Total Value)",
                     loc="center left",
-                    bbox_to_anchor=(1, 0, 0.5, 1),
+                    bbox_to_anchor=(1.1, 0.5),
                     fontsize=10,
                 )
                 
-                # Add a source watermark
-                plt.figtext(0.5, 0.01, 'Data source: Quiver Quantitative', 
-                            fontsize=8, ha='center', color=COLORS['text'])
-                
-                plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
+                # Equal aspect ratio ensures that pie is drawn as a circle
+                ax.axis('equal')
                 
                 # Add party color to the background
                 party_color = COLORS['democrat'] if party == 'Democrats' else COLORS['republican']
-                circle = plt.Circle((0, 0), 0.6, color=party_color, alpha=0.1)
-                plt.gcf().gca().add_artist(circle)
-                
-                # Save the figure
-                plt.tight_layout()
-                output_path = os.path.join(
-                    output_dir, 
-                    f'stock_{party.lower()}_{tx_type.lower()}_{quarter}.png'
-                )
-                plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor=COLORS['background'])
-                print(f"Saved pie chart to: {output_path}")
-                plt.close()
+                circle = plt.Circle((0, 0), 0.6, color=party_color, alpha=0.1, transform=ax.transData)
+                ax.add_artist(circle)
+            
+            # Add an overall title for the figure
+            plt.suptitle(
+                f"{party} Stock Trading Activity - {quarter}",
+                fontsize=22, 
+                y=1.02,
+                color=COLORS['text']
+            )
+            
+            # Add a source watermark
+            plt.figtext(0.5, 0.02, 'Data source: House Stock Watcher', 
+                        fontsize=8, ha='center', color=COLORS['text'])
+            
+            # Adjust layout and save
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+            output_path = os.path.join(
+                output_dir, 
+                f'stock_{party.lower()}_combined_{quarter}.png'
+            )
+            plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor=COLORS['background'])
+            print(f"Saved combined pie charts to: {output_path}")
+            plt.close()
     
     print("All stock pie charts created successfully.")
 
 def save_raw_data(df, output_dir):
-    """Save the filtered data to CSV for reference, with trade upper amount prominently included."""
-    # Ensure TradeValueUpper column is properly formatted as currency
-    if 'TradeValueUpper' in df.columns:
-        print(f"Including TradeValueUpper column in raw data output (range: ${df['TradeValueUpper'].min():,.2f} to ${df['TradeValueUpper'].max():,.2f})")
-    else:
-        print("Warning: TradeValueUpper column not found in data")
-        
-    # Add a more descriptive column name for clarity
-    df = df.copy()
-    df.rename(columns={'TradeValueUpper': 'TradeAmount_UpperRange_$'}, inplace=True)
+    """Save the filtered data to CSV for reference."""
+    print("\nPreparing raw data for CSV output...")
     
-    # Rearrange columns to put important ones first
-    columns_order = [
-        'Quarter', 'PartyName', 'Party', 'Representative', 
-        'Ticker', 'Transaction', 'StandardizedTransaction',
-        'TradeAmount_UpperRange_$', 'Range', 'Date', 'TransactionDate',
-        'PriceChange', 'AdjustedPriceChange', 'SPYChange'
+    # Create a copy to avoid modifying the original dataframe
+    df_output = df.copy()
+    
+    # Extract upper range value from Range column
+    def extract_upper_range(range_str):
+        try:
+            # Extract the second number (upper limit) from strings like "$1,001 - $15,000"
+            upper_amount = range_str.split('-')[1].strip()
+            # Remove '$' and ',' then convert to float
+            return float(upper_amount.replace('$', '').replace(',', ''))
+        except:
+            return 0.0
+    
+    # Add upper range column
+    df_output['TradeAmount_UpperRange'] = df_output['Range'].apply(extract_upper_range)
+    
+    # Format as currency string
+    df_output['TradeAmount_UpperRange_$'] = df_output['TradeAmount_UpperRange'].apply(
+        lambda x: f"${x:,.2f}"
+    )
+    
+    # Select and reorder columns
+    columns_to_keep = [
+        'Quarter',
+        'PartyName', 
+        'Representative',
+        'Ticker',
+        'TransactionType',
+        'TradeAmount_UpperRange_$',
+        'TradeAmount_UpperRange',  # Numeric version for calculations
+        'PercentChange',
+        'TransactionDate'
     ]
     
-    # Only include columns that exist in the dataframe
-    existing_columns = [col for col in columns_order if col in df.columns]
+    # Only keep columns that exist in the dataframe
+    existing_columns = [col for col in columns_to_keep if col in df_output.columns]
     
-    # Add any remaining columns at the end
-    remaining_columns = [col for col in df.columns if col not in existing_columns]
+    # Save main dataset
+    main_output = os.path.join(output_dir, 'cleaned_trading_data.csv')
+    df_output[existing_columns].to_csv(main_output, index=False)
+    print(f"Saved all trades to: {main_output}")
     
-    # Set the final column order
-    final_columns = existing_columns + remaining_columns
-    
-    # Save to CSV with the specified column order
-    output_path = os.path.join(output_dir, 'all_trades_raw_data.csv')
-    df[final_columns].to_csv(output_path, index=False)
-    print(f"Saved complete raw trade data to: {output_path}")
-    
-    # Save individual CSVs by party and transaction type for easier analysis
-    for party in df['PartyName'].unique():
-        for tx_type in df['StandardizedTransaction'].unique():
-            subset = df[
-                (df['PartyName'] == party) &
-                (df['StandardizedTransaction'] == tx_type)
+    # Save separate files by party and transaction type
+    for party in df_output['PartyName'].unique():
+        for tx_type in df_output['TransactionType'].unique():
+            subset = df_output[
+                (df_output['PartyName'] == party) &
+                (df_output['TransactionType'] == tx_type)
             ]
             if len(subset) > 0:
                 party_code = 'D' if party == 'Democrats' else 'R'
-                tx_code = 'P' if tx_type == 'Purchase' else 'S'
+                tx_code = 'P' if tx_type == 'purchase' else 'S'
                 subset_path = os.path.join(output_dir, f'trades_{party_code}_{tx_code}.csv')
-                subset[final_columns].to_csv(subset_path, index=False)
+                subset[existing_columns].to_csv(subset_path, index=False)
                 print(f"Saved {party} {tx_type}s data: {len(subset)} records to {subset_path}")
     
-    return output_path
+    # Print summary of trade amounts
+    print("\nTrade Amount Summary:")
+    print(f"Total trade amount: ${df_output['TradeAmount_UpperRange'].sum():,.2f}")
+    print(f"Average trade amount: ${df_output['TradeAmount_UpperRange'].mean():,.2f}")
+    print(f"Median trade amount: ${df_output['TradeAmount_UpperRange'].median():,.2f}")
+    print(f"Range: ${df_output['TradeAmount_UpperRange'].min():,.2f} to "
+          f"${df_output['TradeAmount_UpperRange'].max():,.2f}")
+    
+    return main_output
 
 def main():
     """Main function to analyze stock holdings and create visualizations."""
@@ -480,21 +438,17 @@ def main():
     output_dir = setup_directories()
     
     try:
-        # Check if API key is set
-        if not QUIVER_API_KEY:
-            print("Error: API key not set. Please create a .env file with your API_KEY=your_api_key_here")
-            print("You can sign up for a Quiver Quantitative API key at https://www.quiverquant.com/")
-            return
-        
-        # Get trading data
-        trading_data = get_congress_trading_data()
+        # Load data from final_results.csv
+        file_path = os.path.join(INPUT_DIR, 'final_results.csv')
+        print(f"Loading data from: {file_path}")
+        trading_data = pd.read_csv(file_path)
         
         if trading_data is not None:
             # Preprocess data
             df_processed = preprocess_data(trading_data)
             
             if df_processed is not None and not df_processed.empty:
-                # Save raw filtered data for Excel analysis
+                # Save raw filtered data for reference
                 save_raw_data(df_processed, output_dir)
                 
                 # Analyze stock holdings
@@ -507,7 +461,7 @@ def main():
             else:
                 print("Error: No valid data available for analysis after filtering.")
         else:
-            print("Failed to fetch trading data. Please check your API key and try again.")
+            print("Error: Could not load data from final_results.csv")
         
     except Exception as e:
         print(f"Error during Stock Holdings analysis: {str(e)}")
