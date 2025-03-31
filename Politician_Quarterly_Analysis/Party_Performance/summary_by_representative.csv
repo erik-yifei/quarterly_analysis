@@ -1,8 +1,8 @@
-Quarter,PartyName,Representative,PercentChange,PercentChange,TradeAmount,WeightedTradeReturn
+Quarter,PartyName,Representative,PercentChange,PercentChange,TradeAmount,WeightedReturn
 ,,,count,mean,sum,sum
 2024-Q4,Democrats,Debbie Wasserman Schultz,4,-3.02,60000.0,-0.0
 2024-Q4,Democrats,Earl Blumenauer,1,3.36,15000.0,0.0
-2024-Q4,Democrats,Gary Peters,3,-24.54,45000.0,-0.01
+2024-Q4,Democrats,Gary Peters,3,-24.54,45000.0,0.01
 2024-Q4,Democrats,Gerald E. Connolly,2,20.14,30000.0,0.01
 2024-Q4,Democrats,Greg Landsman,17,0.62,465000.0,0.0
 2024-Q4,Democrats,Jake Auchincloss,1,2.99,50000.0,0.0
@@ -12,31 +12,31 @@ Quarter,PartyName,Representative,PercentChange,PercentChange,TradeAmount,Weighte
 2024-Q4,Democrats,Lloyd Doggett,7,1.03,105000.0,0.0
 2024-Q4,Democrats,Morgan Mcgarvey,14,8.82,245000.0,0.02
 2024-Q4,Democrats,Nancy Pelosi,4,2.46,36000000.0,2.97
-2024-Q4,Democrats,Sheldon Whitehouse,18,6.0,680000.0,0.02
+2024-Q4,Democrats,Sheldon Whitehouse,18,6.0,680000.0,-0.02
 2024-Q4,Democrats,Steve Cohen,1,43.9,15000.0,0.01
 2024-Q4,Democrats,Thomas R. Suozzi,7,-4.79,210000.0,-0.0
 2024-Q4,Democrats,Tina Smith,1,-16.46,100000.0,-0.01
 2024-Q4,Democrats,William R. Keating,5,5.59,75000.0,0.0
 2024-Q4,Republicans,A. Mitchell Jr. McConnell,1,-5.61,15000.0,-0.01
-2024-Q4,Republicans,Bill Hagerty,1,-4.73,15000.0,-0.01
+2024-Q4,Republicans,Bill Hagerty,1,-4.73,15000.0,0.01
 2024-Q4,Republicans,Byron Donalds,8,8.34,120000.0,0.12
-2024-Q4,Republicans,John Boozman,8,-2.35,120000.0,-0.03
+2024-Q4,Republicans,John Boozman,8,-2.35,120000.0,0.03
 2024-Q4,Republicans,Kevin Hern,9,-3.9,1380000.0,-1.32
 2024-Q4,Republicans,Lance Gooden,1,14.51,100000.0,0.17
 2024-Q4,Republicans,Laurel Lee,5,-4.09,180000.0,-0.04
 2024-Q4,Republicans,Maria Elvira Salazar,3,6.85,115000.0,-0.06
 2024-Q4,Republicans,Marjorie Taylor Mrs Greene,75,-3.29,1125000.0,-0.44
 2024-Q4,Republicans,Mark Dr Green,3,-6.39,250000.0,-0.23
-2024-Q4,Republicans,Markwayne Mullin,34,-5.4,3435000.0,0.38
+2024-Q4,Republicans,Markwayne Mullin,34,-5.4,3435000.0,1.35
 2024-Q4,Republicans,Michael Patrick Guest,3,-10.76,45000.0,-0.06
 2024-Q4,Republicans,Mike Kelly,2,5.26,65000.0,0.02
 2024-Q4,Republicans,Pete Sessions,2,-15.27,30000.0,-0.05
 2024-Q4,Republicans,Richard W. Allen,1,9.33,50000.0,0.06
 2024-Q4,Republicans,Robert E. Latta,1,-11.62,15000.0,-0.02
-2024-Q4,Republicans,Shelley Moore Capito,6,-4.45,90000.0,-0.05
+2024-Q4,Republicans,Shelley Moore Capito,6,-4.45,90000.0,0.02
 2024-Q4,Republicans,Thomas H. Kean Jr,7,3.54,105000.0,0.04
 2024-Q4,Republicans,Thomas H. Kean Jr.,2,13.16,30000.0,0.05
-2024-Q4,Republicans,Tommy Tuberville,10,-1.86,465000.0,-0.12
+2024-Q4,Republicans,Tommy Tuberville,10,-1.86,465000.0,0.12
 2024-Q4,Republicans,Virginia Foxx,17,3.5,600000.0,0.05
 2025-Q1,Democrats,April Mcclain Delaney,37,-0.81,695000.0,-0.01
 2025-Q1,Democrats,Cleo Fields,1,8.48,1000000.0,0.22
@@ -54,33 +54,33 @@ Quarter,PartyName,Representative,PercentChange,PercentChange,TradeAmount,Weighte
 2025-Q1,Democrats,Mikie Sherrill,1,5.28,500000.0,0.07
 2025-Q1,Democrats,Nancy Pelosi,5,-2.62,2600000.0,-1.11
 2025-Q1,Democrats,Rick Larsen,8,2.63,120000.0,0.01
-2025-Q1,Democrats,Ron Wyden,4,-14.23,230000.0,-0.01
-2025-Q1,Democrats,Sheldon Whitehouse,1,-25.0,50000.0,-0.03
+2025-Q1,Democrats,Ron Wyden,4,-14.23,230000.0,0.07
+2025-Q1,Democrats,Sheldon Whitehouse,1,-25.0,50000.0,0.03
 2025-Q1,Democrats,Susie Lee,4,16.6,200000.0,0.08
-2025-Q1,Democrats,Tina Smith,2,3.72,500000.0,0.05
+2025-Q1,Democrats,Tina Smith,2,3.72,500000.0,-0.05
 2025-Q1,Democrats,William R. Keating,11,-2.77,165000.0,-0.01
 2025-Q1,Republicans,A. Mitchell Jr. McConnell,1,-8.34,15000.0,-0.0
-2025-Q1,Republicans,Ashley B. Moody,4,-3.01,550000.0,-0.16
+2025-Q1,Republicans,Ashley B. Moody,4,-3.01,550000.0,-0.33
 2025-Q1,Republicans,August Lee Pfluger Ii,1,-14.09,15000.0,-0.01
 2025-Q1,Republicans,Brad Knott,3,-1.72,80000.0,0.0
 2025-Q1,Republicans,Byron Donalds,21,-4.37,315000.0,-0.05
-2025-Q1,Republicans,David H. McCormick,3,-10.27,5150000.0,-4.94
+2025-Q1,Republicans,David H. McCormick,3,-10.27,5150000.0,4.93
 2025-Q1,Republicans,James Comer,29,-5.21,435000.0,-0.07
-2025-Q1,Republicans,James E. Banks,1,7.39,15000.0,0.0
+2025-Q1,Republicans,James E. Banks,1,7.39,15000.0,-0.0
 2025-Q1,Republicans,James French Hill,1,-19.1,50000.0,-0.03
 2025-Q1,Republicans,Jefferson Shreve,64,-0.19,3780000.0,-0.13
-2025-Q1,Republicans,John Boozman,37,-4.78,555000.0,-0.09
-2025-Q1,Republicans,Marco Rubio,2,10.37,30000.0,0.01
+2025-Q1,Republicans,John Boozman,37,-4.78,555000.0,-0.03
+2025-Q1,Republicans,Marco Rubio,2,10.37,30000.0,-0.01
 2025-Q1,Republicans,Marjorie Taylor Greene,78,-4.02,1205000.0,-0.16
 2025-Q1,Republicans,Mark Dr Green,6,8.19,1950000.0,0.75
-2025-Q1,Republicans,Markwayne Mullin,46,-6.01,2315000.0,-0.44
+2025-Q1,Republicans,Markwayne Mullin,46,-6.01,2315000.0,-0.51
 2025-Q1,Republicans,Richard W. Allen,1,19.34,50000.0,0.03
 2025-Q1,Republicans,Rob Bresnahan,255,2.9,4400000.0,0.42
 2025-Q1,Republicans,Robert E. Latta,1,-7.88,15000.0,-0.0
 2025-Q1,Republicans,Scott Scott Franklin,11,-2.09,5390000.0,-1.98
-2025-Q1,Republicans,Shelley Moore Capito,17,-4.79,255000.0,-0.04
+2025-Q1,Republicans,Shelley Moore Capito,17,-4.79,255000.0,0.01
 2025-Q1,Republicans,Thomas H. Kean Jr,8,3.61,155000.0,0.02
 2025-Q1,Republicans,Tim Moore,29,1.68,3415000.0,0.36
-2025-Q1,Republicans,Tommy Tuberville,6,-5.85,265000.0,-0.05
+2025-Q1,Republicans,Tommy Tuberville,6,-5.85,265000.0,0.05
 2025-Q1,Republicans,Victoria Spartz,1,-2.44,50000.0,-0.0
 2025-Q1,Republicans,Virginia Foxx,2,-4.73,30000.0,-0.0

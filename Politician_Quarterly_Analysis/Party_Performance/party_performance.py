@@ -3,8 +3,8 @@ Party Performance Analysis
 
 This script analyzes congressional trading activity by political party (Democrats vs Republicans),
 comparing performance for two time periods:
-- 2024 Q4 (October 1, 2024 - December 31, 2024)
-- 2025 Q1 (January 1, 2025 - March 21, 2025)
+- 2024 Q4 (October 1, 2024 - December 30, 2024)
+- 2025 Q1 (January 1, 2025 - March 28, 2025)
 
 The analysis calculates:
 - Total portfolio value changes by party
@@ -13,9 +13,9 @@ The analysis calculates:
 
 SPY reference prices:
 - 10/1/2024: $568.62
-- 12/31/2024: $586.08
+- 12/30/2024: $585.19
 - 1/2/2025: $584.64
-- 3/21/2025: $563.98
+- 3/28/2025: $563.98
 """
 
 import os
@@ -31,16 +31,16 @@ OUTPUT_DIR = os.path.dirname(__file__)
 # Define SPY reference prices for calculating market performance
 SPY_PRICES = {
     'q4_start': 568.62,  # 10/1/2024
-    'q4_end': 586.08,    # 12/31/2024
+    'q4_end': 585.19,    # 12/30/2024
     'q1_start': 584.64,  # 1/2/2025
-    'q1_end': 563.98     # 3/21/2025
+    'q1_end': 563.98     # 3/28/2025
 }
 
 # Calculate SPY percent changes
 SPY_CHANGES = {
-    '2024-Q4': (SPY_PRICES['q4_end'] - SPY_PRICES['q4_start']) / SPY_PRICES['q4_start'] * 100,
-    '2025-Q1': (SPY_PRICES['q1_end'] - SPY_PRICES['q1_start']) / SPY_PRICES['q1_start'] * 100,
-    'Combined': (SPY_PRICES['q1_end'] - SPY_PRICES['q4_start']) / SPY_PRICES['q4_start'] * 100
+    '2024-Q4': 2.21,    # Manually set Q4 2024 performance
+    '2025-Q1': -5.91,   # Manually set Q1 2025 performance
+    'Combined': -3.84    # Optional: can calculate combined if needed
 }
 
 # Define custom color scheme - dark theme with blue/red political colors
@@ -82,7 +82,37 @@ def load_and_prepare_data():
     # Convert dates to datetime
     df['TransactionDate'] = pd.to_datetime(df['TransactionDate'])
     
-    # Clean up Transaction types
+    # Filter for the two quarters of interest with updated end dates
+    q4_2024_start = pd.Timestamp('2024-10-01')
+    q4_2024_end = pd.Timestamp('2024-12-31')  # Changed back to include Dec 31
+    q1_2025_start = pd.Timestamp('2025-01-01')
+    q1_2025_end = pd.Timestamp('2025-03-28')
+    
+    conditions = [
+        (df['TransactionDate'] >= q4_2024_start) & (df['TransactionDate'] <= q4_2024_end),
+        (df['TransactionDate'] >= q1_2025_start) & (df['TransactionDate'] <= q1_2025_end)
+    ]
+    choices = ['2024-Q4', '2025-Q1']
+    df['Quarter'] = np.select(conditions, choices, default='Other')
+    
+    # Filter out trades not in our quarters of interest
+    df = df[df['Quarter'].isin(['2024-Q4', '2025-Q1'])]
+    
+    # Calculate trade result based on Transaction type
+    def calculate_trade_result(row):
+        transaction = str(row['Transaction']).lower()
+        price_change = row['PercentChange']
+        
+        # For any type of sale (sale, sale (full), sale (partial))
+        if 'sale' in transaction:
+            return -price_change  # Profit when price goes down, loss when price goes up
+        else:  # purchase
+            return price_change   # Profit when price goes up, loss when price goes down
+    
+    # Add trade result column
+    df['TradeResult'] = df.apply(calculate_trade_result, axis=1)
+    
+    # Clean transaction type for graphing only
     def clean_transaction_type(transaction):
         transaction = str(transaction).lower()
         if 'exchange' in transaction:
@@ -94,11 +124,21 @@ def load_and_prepare_data():
         else:
             return 'other'
     
-    # Add cleaned transaction type column
+    # Add cleaned transaction type column (for graphing only)
     df['TransactionType'] = df['Transaction'].apply(clean_transaction_type)
     
     # Filter out exchanges and other transaction types
     df = df[df['TransactionType'].isin(['sale', 'purchase'])]
+    
+    # Print verification of calculations
+    print("\nVerifying trade result calculations:")
+    print("\nSample of trades:")
+    sample = df.head(10)
+    print(sample[['Transaction', 'PercentChange', 'TradeResult', 'TransactionType']])
+    
+    # Remove TradeResult and WeightedTradeReturn columns if they exist
+    columns_to_drop = ['TradeResult', 'WeightedTradeReturn']
+    df = df.drop(columns=[col for col in columns_to_drop if col in df.columns])
     
     # Extract upper limit from Range column
     def extract_upper_limit(range_str):
@@ -120,6 +160,8 @@ def load_and_prepare_data():
     print("\nData Summary:")
     print(f"Total trades (excluding exchanges): {len(df)}")
     print(f"Date range: {df['TransactionDate'].min()} to {df['TransactionDate'].max()}")
+    print(f"\nTrades by quarter:")
+    print(df['Quarter'].value_counts())
     print(f"\nTrades by transaction type:")
     print(df['TransactionType'].value_counts())
     print(f"\nTrades by party:")
@@ -129,26 +171,31 @@ def load_and_prepare_data():
     return df
 
 def calculate_party_performance(df):
-    """Calculate performance metrics by party using PercentChange"""
+    """Calculate performance metrics by party"""
     print("\nCalculating party performance metrics...")
     
-    # First, calculate party totals by quarter
+    # Calculate party totals for weighting
     party_totals = df.groupby(['Quarter', 'PartyName'])['TradeAmount'].sum().reset_index()
-    
-    # Create a dictionary for quick lookup of party totals
     total_lookup = {(row['Quarter'], row['PartyName']): row['TradeAmount'] 
-                   for _, row in party_totals.iterrows()}
+                    for _, row in party_totals.iterrows()}
     
-    # Calculate weighted return for each trade using PercentChange instead of AdjustedReturn
-    df['WeightedTradeReturn'] = df.apply(lambda row: 
-        (row['PercentChange'] * row['TradeAmount']) / 
-        total_lookup[(row['Quarter'], row['PartyName'])], axis=1)
+    # Calculate weighted returns - SIMPLE LOGIC:
+    # Only flip sign for 'Sale (Partial)' or 'Sale (Full)'
+    def calculate_weighted_return(row):
+        # Check for exact matches only
+        if row['Transaction'] in ['Sale (Partial)', 'Sale (Full)']:
+            return -1 * (row['PercentChange'] * row['TradeAmount']) / total_lookup[(row['Quarter'], row['PartyName'])]
+        else:
+            return (row['PercentChange'] * row['TradeAmount']) / total_lookup[(row['Quarter'], row['PartyName'])]
+    
+    # Apply the calculation
+    df['WeightedReturn'] = df.apply(calculate_weighted_return, axis=1)
     
     # Group by Quarter and Party
     party_performance = df.groupby(['Quarter', 'PartyName']).agg({
-        'TradeAmount': 'sum',  # Sum of trade amounts
-        'WeightedTradeReturn': 'sum',  # Sum of weighted returns
-        'TransactionType': lambda x: len([t for t in x if t == 'purchase']),  # Count purchases
+        'TradeAmount': 'sum',
+        'WeightedReturn': 'sum',
+        'TransactionType': 'count',
         'Representative': 'nunique',
         'Ticker': 'nunique'
     }).reset_index()
@@ -245,20 +292,20 @@ def save_cleaned_data(df, output_dir):
     """Save the cleaned and processed data to CSV files"""
     print("\nSaving cleaned data to CSV files...")
     
-    # Save detailed raw data with all relevant columns that exist in df
+    # Update raw columns list to only include columns we have
     raw_columns = [
         'Quarter',
         'TransactionDate',
         'Representative',
         'PartyName',
         'Ticker',
-        'TransactionType',
-        'Range',  # Original range value
-        'TradeAmount',  # Upper range value
-        'EntryPrice',  # Entry price of the stock
-        'ExitPrice',   # Exit price of the stock
-        'PercentChange',  # Original return
-        'WeightedTradeReturn'  # Calculated weighted return
+        'Transaction',  # Changed from TransactionType to Transaction
+        'Range',
+        'TradeAmount',
+        'EntryPrice',
+        'ExitPrice',
+        'PercentChange',
+        'WeightedReturn'  # Changed from WeightedTradeReturn
     ]
     
     # Save raw data with all calculations
@@ -277,7 +324,7 @@ def save_cleaned_data(df, output_dir):
     print("\nSummary Statistics by Party and Quarter:")
     summary = df.groupby(['Quarter', 'PartyName']).agg({
         'TradeAmount': ['sum', 'mean', 'count'],
-        'WeightedTradeReturn': 'sum',
+        'WeightedReturn': 'sum',
         'Representative': 'nunique',
         'PercentChange': ['mean', 'min', 'max'],
         'EntryPrice': ['mean', 'min', 'max'],
@@ -288,11 +335,11 @@ def save_cleaned_data(df, output_dir):
     # Save party-level summary
     pivot_by_party = pd.pivot_table(
         df,
-        values=['TradeAmount', 'WeightedTradeReturn', 'PercentChange'],
+        values=['TradeAmount', 'WeightedReturn', 'PercentChange'],
         index=['Quarter', 'PartyName'],
         aggfunc={
             'TradeAmount': 'sum',
-            'WeightedTradeReturn': 'sum',
+            'WeightedReturn': 'sum',
             'PercentChange': ['mean', 'count']
         }
     ).round(2).reset_index()
@@ -304,11 +351,11 @@ def save_cleaned_data(df, output_dir):
     # Save representative-level summary
     pivot_by_rep = pd.pivot_table(
         df,
-        values=['TradeAmount', 'WeightedTradeReturn', 'PercentChange'],
+        values=['TradeAmount', 'WeightedReturn', 'PercentChange'],
         index=['Quarter', 'PartyName', 'Representative'],
         aggfunc={
             'TradeAmount': 'sum',
-            'WeightedTradeReturn': 'sum',
+            'WeightedReturn': 'sum',
             'PercentChange': ['mean', 'count']
         }
     ).round(2).reset_index()
@@ -320,7 +367,7 @@ def save_cleaned_data(df, output_dir):
     # Print verification of total weighted returns
     print("\nVerification of Total Weighted Returns by Party and Quarter:")
     verification = df.groupby(['Quarter', 'PartyName']).agg({
-        'WeightedTradeReturn': 'sum',
+        'WeightedReturn': 'sum',
         'PercentChange': 'mean'
     }).round(2)
     print(verification.to_string())

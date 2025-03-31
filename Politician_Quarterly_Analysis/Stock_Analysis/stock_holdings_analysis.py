@@ -6,7 +6,7 @@ This script analyzes stock holdings and sales by party, displaying:
 - What stocks Republicans are buying vs. selling
 - Comparing across two time periods:
   - 2024 Q4 (October 1, 2024 - December 31, 2024)
-  - 2025 Q1 (January 1, 2025 - March 21, 2025)
+  - 2025 Q1 (January 1, 2025 - March 28, 2025)
 
 The analysis is displayed as pie charts showing the distribution
 of stock holdings/sales by ticker for each party and transaction type.
@@ -148,11 +148,11 @@ def preprocess_data(df):
     # Add full party name
     df['PartyName'] = df['Party'].map({'D': 'Democrats', 'R': 'Republicans'})
     
-    # Filter for the two quarters of interest
+    # Filter for the two quarters of interest with updated end dates
     q4_2024_start = pd.Timestamp('2024-10-01')
     q4_2024_end = pd.Timestamp('2024-12-31')
     q1_2025_start = pd.Timestamp('2025-01-01')
-    q1_2025_end = pd.Timestamp('2025-03-21')
+    q1_2025_end = pd.Timestamp('2025-03-28')  # Changed from March 21 to March 28
     
     conditions = [
         (df['TransactionDate'] >= q4_2024_start) & (df['TransactionDate'] <= q4_2024_end),

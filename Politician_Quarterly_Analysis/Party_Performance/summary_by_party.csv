@@ -1,6 +1,6 @@
-Quarter,PartyName,PercentChange,PercentChange,TradeAmount,WeightedTradeReturn
+Quarter,PartyName,PercentChange,PercentChange,TradeAmount,WeightedReturn
 ,,count,mean,sum,sum
-2024-Q4,Democrats,274,-0.25,111260000.0,2.98
-2024-Q4,Republicans,199,-2.12,8350000.0,-1.56
-2025-Q1,Democrats,434,-0.02,39345000.0,-1.14
-2025-Q1,Republicans,628,-0.57,30485000.0,-6.55
+2024-Q4,Democrats,274,-0.25,111260000.0,2.96
+2024-Q4,Republicans,199,-2.12,8350000.0,-0.19
+2025-Q1,Democrats,434,-0.02,39345000.0,-1.09
+2025-Q1,Republicans,628,-0.57,30485000.0,3.25

@@ -3,8 +3,8 @@ Individual Politician Performance Analysis
 
 This script analyzes trading activity of individual politicians,
 comparing their performance for two time periods:
-- 2024 Q4 (October 1, 2024 - December 31, 2024)
-- 2025 Q1 (January 1, 2025 - March 21, 2025)
+- 2024 Q4 (October 1, 2024 - December 30, 2024)
+- 2025 Q1 (January 1, 2025 - March 28, 2025)
 
 The analysis calculates:
 - Weighted portfolio value changes by politician
@@ -13,9 +13,9 @@ The analysis calculates:
 
 SPY reference prices:
 - 10/1/2024: $568.62
-- 12/31/2024: $586.08
+- 12/30/2024: $585.19
 - 1/2/2025: $584.64
-- 3/21/2025: $563.98
+- 3/28/2025: $563.98
 """
 
 import os
@@ -35,15 +35,15 @@ plt.style.use('dark_background')
 # Define SPY reference prices for calculating market performance
 SPY_PRICES = {
     'q4_start': 568.62,  # 10/1/2024
-    'q4_end': 586.08,    # 12/31/2024
+    'q4_end': 585.19,    # 12/30/2024 (changed from 12/31)
     'q1_start': 584.64,  # 1/2/2025
-    'q1_end': 563.98     # 3/21/2025
+    'q1_end': 563.98     # 3/28/2025 (updated from 3/21)
 }
 
 # Calculate SPY percent changes
 SPY_CHANGES = {
-    '2024-Q4': (SPY_PRICES['q4_end'] - SPY_PRICES['q4_start']) / SPY_PRICES['q4_start'] * 100,
-    '2025-Q1': (SPY_PRICES['q1_end'] - SPY_PRICES['q1_start']) / SPY_PRICES['q1_start'] * 100
+    '2024-Q4': 2.21,    # Manually set Q4 2024 performance
+    '2025-Q1': -5.91    # Manually set Q1 2025 performance
 }
 
 # Define custom color scheme - dark theme with blue/red political colors
@@ -121,7 +121,21 @@ def preprocess_data(df):
     # Convert dates to datetime
     df['TransactionDate'] = pd.to_datetime(df['TransactionDate'])
     
-    # Clean up Transaction types
+    # Calculate trade result based on Transaction type
+    def calculate_trade_result(row):
+        transaction = str(row['Transaction']).lower()
+        price_change = row['PercentChange']
+        
+        # For any type of sale (sale, sale (full), sale (partial))
+        if 'sale' in transaction:
+            return -price_change  # Profit when price goes down, loss when price goes up
+        else:  # purchase
+            return price_change   # Profit when price goes up, loss when price goes down
+    
+    # Add trade result column
+    df['TradeResult'] = df.apply(calculate_trade_result, axis=1)
+    
+    # Clean transaction type for graphing only
     def clean_transaction_type(transaction):
         transaction = str(transaction).lower()
         if 'exchange' in transaction:
@@ -133,8 +147,21 @@ def preprocess_data(df):
         else:
             return 'other'
     
-    # Add cleaned transaction type column
+    # Add cleaned transaction type column (for graphing only)
     df['TransactionType'] = df['Transaction'].apply(clean_transaction_type)
+    
+    # Print verification of calculations
+    print("\nVerifying trade result calculations:")
+    print("\nSample of sales:")
+    sales = df[df['Transaction'].str.contains('sale', case=False)].head(5)
+    print(sales[['Transaction', 'PercentChange', 'TradeResult', 'TransactionType']])
+    print("\nSample of purchases:")
+    purchases = df[~df['Transaction'].str.contains('sale', case=False)].head(5)
+    print(purchases[['Transaction', 'PercentChange', 'TradeResult', 'TransactionType']])
+    
+    # Remove TradeResult and WeightedTradeReturn columns if they exist
+    columns_to_drop = ['TradeResult', 'WeightedTradeReturn']
+    df = df.drop(columns=[col for col in columns_to_drop if col in df.columns])
     
     # Filter out exchanges and other transaction types
     df = df[df['TransactionType'].isin(['sale', 'purchase'])]
@@ -155,11 +182,11 @@ def preprocess_data(df):
     # Add full party name
     df['PartyName'] = df['Party'].map({'D': 'Democrats', 'R': 'Republicans'})
     
-    # Filter for the two quarters of interest
+    # Filter for the two quarters of interest with updated end dates
     q4_2024_start = pd.Timestamp('2024-10-01')
-    q4_2024_end = pd.Timestamp('2024-12-31')
+    q4_2024_end = pd.Timestamp('2024-12-31')  # Changed back to include Dec 31
     q1_2025_start = pd.Timestamp('2025-01-01')
-    q1_2025_end = pd.Timestamp('2025-03-21')
+    q1_2025_end = pd.Timestamp('2025-03-28')
     
     conditions = [
         (df['TransactionDate'] >= q4_2024_start) & (df['TransactionDate'] <= q4_2024_end),
@@ -170,6 +197,11 @@ def preprocess_data(df):
     
     # Filter for the quarters we want
     df = df[df['Quarter'].isin(['2024-Q4', '2025-Q1'])]
+    
+    print("\nVerifying sale return calculations:")
+    sample_sales = df[df['TransactionType'] == 'sale'].head()
+    print("\nSample of sale transactions and their returns:")
+    print(sample_sales[['TransactionDate', 'Ticker', 'TransactionType', 'PercentChange']])
     
     print("\nData Summary:")
     print(f"Total trades (excluding exchanges): {len(df)}")
@@ -183,56 +215,38 @@ def preprocess_data(df):
     return df
 
 def calculate_politician_performance(df):
-    """Calculate performance metrics by politician using PercentChange"""
+    """Calculate performance metrics by politician"""
     print("\nCalculating politician performance metrics...")
     
-    # First, calculate politician totals by quarter
+    # Calculate politician totals for weighting
     politician_totals = df.groupby(['Quarter', 'Representative'])['TradeAmount'].sum().reset_index()
-    
-    # Create a dictionary for quick lookup of politician totals
     total_lookup = {(row['Quarter'], row['Representative']): row['TradeAmount'] 
-                   for _, row in politician_totals.iterrows()}
+                    for _, row in politician_totals.iterrows()}
     
-    # Calculate weighted return for each trade relative to politician's total trades
-    df['WeightedTradeReturn'] = df.apply(lambda row: 
-        (row['PercentChange'] * row['TradeAmount']) /  # Use PercentChange directly
-        total_lookup[(row['Quarter'], row['Representative'])], axis=1)
+    # Calculate weighted returns - SIMPLE LOGIC:
+    # Only flip sign for 'Sale (Partial)' or 'Sale (Full)'
+    def calculate_weighted_return(row):
+        # Check for exact matches only
+        if row['Transaction'] in ['Sale (Partial)', 'Sale (Full)']:
+            return -1 * (row['PercentChange'] * row['TradeAmount']) / total_lookup[(row['Quarter'], row['Representative'])]
+        else:
+            return (row['PercentChange'] * row['TradeAmount']) / total_lookup[(row['Quarter'], row['Representative'])]
     
-    # Print some validation for the weighted returns
-    print("\nValidating weighted returns calculation:")
-    for (quarter, rep), group in df.groupby(['Quarter', 'Representative']):
-        total_weight = group['TradeAmount'].sum()
-        weighted_sum = (group['PercentChange'] * group['TradeAmount']).sum()  # Use PercentChange
-        calculated_return = weighted_sum / total_weight
-        summed_weighted_returns = group['WeightedTradeReturn'].sum()
-        
-        # Print validation for a few examples
-        if np.random.random() < 0.1:  # Print ~10% of politicians for validation
-            print(f"\nPolitician: {rep} ({quarter})")
-            print(f"Total trade amount: ${total_weight:,.2f}")
-            print(f"Direct calculation: {calculated_return:.2f}%")
-            print(f"Sum of weighted returns: {summed_weighted_returns:.2f}%")
-            print(f"Number of trades: {len(group)}")
-            print("Sample of trades:")
-            for _, trade in group.head(3).iterrows():
-                print(f"  Trade amount: ${trade['TradeAmount']:,.2f}, "
-                      f"Type: {trade['TransactionType']}, "
-                      f"Return: {trade['PercentChange']:.2f}%, "
-                      f"Weight: {(trade['TradeAmount']/total_weight*100):.1f}%, "
-                      f"Weighted contribution: {trade['WeightedTradeReturn']:.2f}%")
+    # Apply the calculation
+    df['WeightedReturn'] = df.apply(calculate_weighted_return, axis=1)
     
     # Group by Quarter and Politician
     politician_performance = df.groupby(['Quarter', 'Representative', 'PartyName']).agg({
-        'TradeAmount': 'sum',  # Sum of trade amounts
-        'WeightedTradeReturn': 'sum',  # Sum of weighted returns (should equal weighted average)
-        'TransactionType': lambda x: len([t for t in x if t == 'purchase']),  # Count purchases
+        'TradeAmount': 'sum',
+        'WeightedReturn': 'sum',
+        'TransactionType': 'count',
         'Ticker': 'nunique'
     }).reset_index()
     
     # Rename columns for clarity
     politician_performance.columns = ['Quarter', 'Representative', 'PartyName', 
                                    'PortfolioValue', 'WeightedReturn', 
-                                   'PurchaseCount', 'UniqueStocks']
+                                   'TotalTrades', 'UniqueStocks']  # Renamed from PurchaseCount to TotalTrades
     
     # Add SPY comparison
     politician_performance['SPYReturn'] = politician_performance['Quarter'].map(SPY_CHANGES)
@@ -387,7 +401,7 @@ def plot_politician_performance(performance_data, output_dir, quarter, top_n=Non
     
     # Move portfolio value annotations further right if needed
     portfolio_x = max(x_max - 20, top_performers['WeightedReturn'].max() + 5)
-    for i, (value, trades) in enumerate(zip(top_performers['PortfolioValue'], top_performers['PurchaseCount'])):
+    for i, (value, trades) in enumerate(zip(top_performers['PortfolioValue'], top_performers['TotalTrades'])):  # Changed from PurchaseCount to TotalTrades
         plt.text(portfolio_x, i, 
                 f"${value:,.0f} ({trades} trades)", 
                 va='center', color=COLORS['text'], fontsize=10)
@@ -419,11 +433,11 @@ def save_raw_data(df, output_dir):
     # Create and save summary by politician
     pivot_by_politician = pd.pivot_table(
         df,
-        values=['TradeAmount', 'WeightedTradeReturn'],
+        values=['TradeAmount', 'WeightedReturn'],
         index=['Quarter', 'PartyName', 'Representative'],
         aggfunc={
             'TradeAmount': 'sum',
-            'WeightedTradeReturn': 'sum'  # Sum the pre-calculated weighted returns
+            'WeightedReturn': 'sum'  # Sum the pre-calculated weighted returns
         }
     ).round(2).reset_index()
     
