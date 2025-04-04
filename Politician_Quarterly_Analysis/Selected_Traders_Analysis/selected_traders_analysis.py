@@ -4,9 +4,9 @@ Selected Traders Analysis
 Analyzes stock holdings and performance for specific traders:
 
 2025 Q1:
-- Thomas H. Kean, Jr.
+- Thomas H. Kean Jr
 - Tommy Tuberville
-- Robert Bresnahan
+- Rob Bresnahan
 
 2024 Q4:
 - Morgan Mcgravey
@@ -39,17 +39,12 @@ COLORS = {
     'negative': '#FF0000',      # Red for negative returns
 }
 
-# Selected traders - only these specific ones
+# Selected traders - only Q1 2025 traders
 SELECTED_TRADERS = {
     '2025-Q1': [
         'Thomas H. Kean Jr',
         'Tommy Tuberville',
         'Rob Bresnahan'
-    ],
-    '2024-Q4': [
-        'Morgan Mcgarvey',
-        'Nancy Pelosi',
-        'Markwayne Mullin'
     ]
 }
 
@@ -97,18 +92,16 @@ def load_and_filter_data():
     # Convert dates
     df['TransactionDate'] = pd.to_datetime(df['TransactionDate'])
     
-    # Filter for quarters
-    q4_2024_start = pd.Timestamp('2024-10-01')
-    q4_2024_end = pd.Timestamp('2024-12-31')
+    # Filter for Q1 2025 only
     q1_2025_start = pd.Timestamp('2025-01-01')
-    q1_2025_end = pd.Timestamp('2025-03-28')
+    q1_2025_end = pd.Timestamp('2025-03-31')  # Updated to March 31
     
-    conditions = [
-        (df['TransactionDate'] >= q4_2024_start) & (df['TransactionDate'] <= q4_2024_end),
-        (df['TransactionDate'] >= q1_2025_start) & (df['TransactionDate'] <= q1_2025_end)
+    # Filter for Q1 2025 only
+    df = df[
+        (df['TransactionDate'] >= q1_2025_start) & 
+        (df['TransactionDate'] <= q1_2025_end)
     ]
-    choices = ['2024-Q4', '2025-Q1']
-    df['Quarter'] = np.select(conditions, choices, default='Other')
+    df['Quarter'] = '2025-Q1'
     
     # Filter for selected traders
     all_selected = [trader for traders in SELECTED_TRADERS.values() for trader in traders]

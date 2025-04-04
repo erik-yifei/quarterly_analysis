@@ -34,16 +34,13 @@ plt.style.use('dark_background')
 
 # Define SPY reference prices for calculating market performance
 SPY_PRICES = {
-    'q4_start': 568.62,  # 10/1/2024
-    'q4_end': 585.19,    # 12/30/2024 (changed from 12/31)
     'q1_start': 584.64,  # 1/2/2025
-    'q1_end': 563.98     # 3/28/2025 (updated from 3/21)
+    'q1_end': 563.98     # 3/28/2025
 }
 
 # Calculate SPY percent changes
 SPY_CHANGES = {
-    '2024-Q4': 2.21,    # Manually set Q4 2024 performance
-    '2025-Q1': -5.91    # Manually set Q1 2025 performance
+    '2025-Q1': -5.91    # Q1 2025 performance
 }
 
 # Define custom color scheme - dark theme with blue/red political colors
@@ -182,21 +179,16 @@ def preprocess_data(df):
     # Add full party name
     df['PartyName'] = df['Party'].map({'D': 'Democrats', 'R': 'Republicans'})
     
-    # Filter for the two quarters of interest with updated end dates
-    q4_2024_start = pd.Timestamp('2024-10-01')
-    q4_2024_end = pd.Timestamp('2024-12-31')  # Changed back to include Dec 31
+    # Filter for Q1 2025 only
     q1_2025_start = pd.Timestamp('2025-01-01')
-    q1_2025_end = pd.Timestamp('2025-03-28')
+    q1_2025_end = pd.Timestamp('2025-03-31')  # Updated to March 31
     
-    conditions = [
-        (df['TransactionDate'] >= q4_2024_start) & (df['TransactionDate'] <= q4_2024_end),
-        (df['TransactionDate'] >= q1_2025_start) & (df['TransactionDate'] <= q1_2025_end)
+    # Filter for Q1 2025 only
+    df = df[
+        (df['TransactionDate'] >= q1_2025_start) & 
+        (df['TransactionDate'] <= q1_2025_end)
     ]
-    choices = ['2024-Q4', '2025-Q1']
-    df['Quarter'] = np.select(conditions, choices, default='Other')
-    
-    # Filter for the quarters we want
-    df = df[df['Quarter'].isin(['2024-Q4', '2025-Q1'])]
+    df['Quarter'] = '2025-Q1'
     
     print("\nVerifying sale return calculations:")
     sample_sales = df[df['TransactionType'] == 'sale'].head()
@@ -480,7 +472,7 @@ def main():
                 print(f"Saved politician performance data to: {performance_csv_path}")
                 
                 # Create visualizations for each quarter - include ALL politicians
-                for quarter in ['2024-Q4', '2025-Q1']:
+                for quarter in ['2025-Q1']:
                     plot_politician_performance(politician_performance, output_dir, quarter)
                 
                 print("Individual Politician Performance analysis complete. All outputs saved to the Politician_Performance directory.")
