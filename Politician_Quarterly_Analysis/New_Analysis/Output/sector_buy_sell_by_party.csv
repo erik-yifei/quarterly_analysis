@@ -1,0 +1,23 @@
+Sector,PartyName,BuyVolume,SellVolume,TotalVolume,NetPurchases
+Technology,Democrats,17355000.0,13460000.0,30815000.0,3895000.0
+Financial Services,Republicans,660000.0,5580000.0,6240000.0,-4920000.0
+Communication Services,Republicans,270000.0,5365000.0,5635000.0,-5095000.0
+Consumer Cyclical,Republicans,2460000.0,2435000.0,4895000.0,25000.0
+Technology,Republicans,2770000.0,1830000.0,4600000.0,940000.0
+Energy,Republicans,400000.0,2095000.0,2495000.0,-1695000.0
+Industrials,Republicans,1230000.0,1240000.0,2470000.0,-10000.0
+Healthcare,Democrats,870000.0,835000.0,1705000.0,35000.0
+Healthcare,Republicans,925000.0,685000.0,1610000.0,240000.0
+Consumer Cyclical,Democrats,820000.0,550000.0,1370000.0,270000.0
+Financial Services,Democrats,485000.0,880000.0,1365000.0,-395000.0
+Utilities,Democrats,1190000.0,135000.0,1325000.0,1055000.0
+Consumer Defensive,Democrats,255000.0,755000.0,1010000.0,-500000.0
+Consumer Defensive,Republicans,460000.0,500000.0,960000.0,-40000.0
+Industrials,Democrats,345000.0,505000.0,850000.0,-160000.0
+Communication Services,Democrats,545000.0,165000.0,710000.0,380000.0
+Real Estate,Republicans,310000.0,95000.0,405000.0,215000.0
+Basic Materials,Republicans,180000.0,160000.0,340000.0,20000.0
+Utilities,Republicans,75000.0,15000.0,90000.0,60000.0
+Basic Materials,Democrats,30000.0,45000.0,75000.0,-15000.0
+Real Estate,Democrats,45000.0,30000.0,75000.0,15000.0
+Energy,Democrats,30000.0,15000.0,45000.0,15000.0
